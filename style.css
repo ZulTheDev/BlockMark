@@ -1,0 +1,54 @@
+body {
+  margin: 0;
+  background: #1e1e2e;
+  font-family: system-ui;
+}
+
+#map {
+  width: 4000px;
+  height: 4000px;
+  position: relative;
+  background: radial-gradient(#2a2a40 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.block {
+  position: absolute;
+  min-width: 120px;
+  padding: 12px;
+  border-radius: 16px;
+  cursor: grab;
+  user-select: none;
+  background: linear-gradient(135deg, #ffb6e9, #cdb4ff);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+}
+
+.block:active {
+  cursor: grabbing;
+}
+
+.folder {
+  background: linear-gradient(135deg, #ffd6ff, #bde0fe);
+}
+
+.bookmark-preview {
+  position: fixed;
+  width: 320px;
+  height: 200px;
+  background: #111;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  pointer-events: none;
+  z-index: 9999;
+  display: none;
+}
+
+.bookmark-preview iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+.bookmark:hover {
+  box-shadow: 0 0 20px rgba(255,182,233,0.8);
+}
