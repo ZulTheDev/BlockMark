@@ -163,7 +163,7 @@ async function setupWithKey(key) {
 }
 
 // ---------- UI Helpers ----------
-function generateKeyFlow() {
+function generateKeyFlow() {generateKeyFlow()
   const key = generatePrivateKey();
   alert(
     "SAVE THIS PRIVATE KEY ⚠️\n\n" +
