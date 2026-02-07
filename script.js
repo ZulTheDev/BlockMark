@@ -143,6 +143,7 @@ async function setupWithKey(key) {
 function generateKeyFlow() {
   const key = generatePrivateKey();
   alert(`SAVE THIS PRIVATE KEY ⚠️\n\n${key}\n\nYou need it to restore your layout.`);
+  console.log(`Here is your private key: ${key}\n copy this somewhere and don't share it to anyone. It's your backup for this app!~`)
   setupWithKey(key);
 }
 
