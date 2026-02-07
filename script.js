@@ -26,28 +26,6 @@ function openDB() {
 }
 
 // ---------- Key Utilities ----------
-// ---------- Key Actions ----------
-async function setupWithKey(key) {
-  userKey = key;
-  cryptoKey = await deriveCryptoKey(key);
-
-  const data = await loadLayout();
-  restoreBlocks(data); // just restore, do NOT call generateKeyFlow again!
-}
-
-function generateKeyFlow() {
-  // Only generate a key once, and setup
-  const key = generatePrivateKey();
-  alert(
-    "SAVE THIS PRIVATE KEY ⚠️\n\n" +
-    key +
-    "\n\nYou need it to restore your layout."
-  );
-
-  // Setup the app with this key
-  setupWithKey(key); // this should NOT call generateKeyFlow again
-}
-
 async function deriveCryptoKey(privateKey) {
   const enc = new TextEncoder();
   const material = await crypto.subtle.importKey(
@@ -76,12 +54,7 @@ async function deriveCryptoKey(privateKey) {
 async function encryptData(data) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(JSON.stringify(data));
-
-  const cipher = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    cryptoKey,
-    encoded
-  );
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, encoded);
 
   return {
     iv: btoa(String.fromCharCode(...iv)),
@@ -92,13 +65,7 @@ async function encryptData(data) {
 async function decryptData(payload) {
   const iv = Uint8Array.from(atob(payload.iv), c => c.charCodeAt(0));
   const data = Uint8Array.from(atob(payload.data), c => c.charCodeAt(0));
-
-  const plain = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv },
-    cryptoKey,
-    data
-  );
-
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, data);
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
@@ -110,8 +77,7 @@ function serializeBlock(block) {
     top: block.style.top,
     z: block.style.zIndex,
     html: block.innerHTML,
-    children: [...block.querySelectorAll(":scope > .children > .block")]
-      .map(serializeBlock)
+    children: [...block.querySelectorAll(":scope > .children > .block")].map(serializeBlock)
   };
 }
 
@@ -139,24 +105,19 @@ function restoreBlocks(blocks, parent = map) {
 async function saveLayout() {
   if (!cryptoKey) return;
 
-  const blocks = [...map.querySelectorAll(":scope > .block")]
-    .map(serializeBlock);
-
+  const blocks = [...map.querySelectorAll(":scope > .block")].map(serializeBlock);
   const encrypted = await encryptData(blocks);
   const db = await openDB();
 
-  db.transaction(STORE, "readwrite")
-    .objectStore(STORE)
+  db.transaction(STORE, "readwrite").objectStore(STORE)
     .put({ id: "layout", payload: encrypted });
 }
 
 async function loadLayout() {
+  if (!cryptoKey) return [];
   const db = await openDB();
   return new Promise(resolve => {
-    const req = db.transaction(STORE)
-      .objectStore(STORE)
-      .get("layout");
-
+    const req = db.transaction(STORE).objectStore(STORE).get("layout");
     req.onsuccess = async () => {
       if (!req.result) return resolve([]);
       try {
@@ -167,6 +128,7 @@ async function loadLayout() {
         resolve([]);
       }
     };
+    req.onerror = () => resolve([]);
   });
 }
 
@@ -178,14 +140,9 @@ async function setupWithKey(key) {
   restoreBlocks(data);
 }
 
-// ---------- UI Helpers ----------
-function generateKeyFlow() {generateKeyFlow()
+function generateKeyFlow() {
   const key = generatePrivateKey();
-  alert(
-    "SAVE THIS PRIVATE KEY ⚠️\n\n" +
-    key +
-    "\n\nYou need it to restore your layout."
-  );
+  alert(`SAVE THIS PRIVATE KEY ⚠️\n\n${key}\n\nYou need it to restore your layout.`);
   setupWithKey(key);
 }
 
@@ -193,6 +150,11 @@ function restoreWithKey() {
   const key = prompt("Paste your private key:");
   if (!key) return;
   setupWithKey(key);
+}
+
+function generatePrivateKey() {
+  return crypto.getRandomValues(new Uint8Array(16))
+    .reduce((str, n) => str + n.toString(16).padStart(2, "0"), "");
 }
 
 // ---------- Blocks ----------
@@ -210,24 +172,17 @@ function addBlock(type) {
   block.style.zIndex = topZ++;
 
   if (type === "folder") {
-    block.innerHTML =
-      `<strong>${prompt("Folder name") || "Folder"}</strong>
-       <div class="children"></div>`;
-  }
-
-  if (type === "bookmark") {
+    block.innerHTML = `<strong>${prompt("Folder name") || "Folder"}</strong>
+                       <div class="children"></div>`;
+  } else if (type === "bookmark") {
     const url = prompt("Enter URL");
     if (!url) return;
-    block.innerHTML =
-      `<strong>Bookmark</strong>
-       <a href="${url}" target="_blank">${url}</a>`;
+    block.innerHTML = `<strong>Bookmark</strong>
+                       <a href="${url}" target="_blank">${url.replace(/^https?:\/\//, "")}</a>`;
     enablePreview(block);
-  }
-
-  if (type === "note") {
-    block.innerHTML =
-      `<strong contenteditable="true">Note</strong>
-       <p contenteditable="true">Write here…</p>`;
+  } else if (type === "note") {
+    block.innerHTML = `<strong contenteditable="true">Note</strong>
+                       <p contenteditable="true">Write here…</p>`;
   }
 
   enableDragging(block);
@@ -235,19 +190,18 @@ function addBlock(type) {
   saveLayout();
 }
 
-// ---------- Drag / Snap ----------
+// ---------- Dragging ----------
 function enableDragging(el) {
   let ox, oy;
-
   el.addEventListener("mousedown", e => {
     if (e.target.isContentEditable) return;
     ox = e.clientX - el.offsetLeft;
     oy = e.clientY - el.offsetTop;
     el.style.zIndex = topZ++;
 
-    function move(e) {
-      el.style.left = e.clientX - ox + "px";
-      el.style.top = e.clientY - oy + "px";
+    function move(eMove) {
+      el.style.left = eMove.clientX - ox + "px";
+      el.style.top = eMove.clientY - oy + "px";
     }
 
     function up() {
@@ -270,8 +224,10 @@ function enablePreview(block) {
   const link = block.querySelector("a");
   if (!link) return;
 
-  block.addEventListener("mouseenter", () => {
+  block.addEventListener("mouseenter", e => {
     preview.style.display = "block";
+    preview.style.left = e.clientX + 20 + "px";
+    preview.style.top = e.clientY + 20 + "px";
     preview.innerHTML = `<iframe src="${link.href}"></iframe>`;
   });
 
