@@ -1,54 +1,127 @@
+/* ===== Base ===== */
+* {
+box-sizing: border-box;
+font-family: "Quicksand", sans-serif;
+user-select: none;
+}
+
 body {
-  margin: 0;
-  background: #1e1e2e;
-  font-family: system-ui;
+margin: 0;
+background: linear-gradient(135deg, #ffe0f0, #e0f7ff);
+overflow: hidden;
 }
 
+body.logged-in::after {
+content: "✨ Logged in";
+position: fixed;
+top: 10px;
+right: 16px;
+font-size: 12px;
+opacity: 0.7;
+}
+
+/* ===== Toolbar ===== */
+#toolbar {
+position: fixed;
+top: 10px;
+left: 10px;
+display: flex;
+gap: 8px;
+z-index: 9999;
+}
+
+#toolbar button {
+padding: 8px 12px;
+border: none;
+border-radius: 12px;
+background: #ffb3d9;
+color: #4a004a;
+font-weight: 600;
+cursor: pointer;
+box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+transition: transform 0.15s ease;
+}
+
+#toolbar button:hover {
+  transform: scale(1.05);
+  background: #ffc6e5;
+}
+
+/* ===== Map Canvas ===== */
 #map {
-  width: 4000px;
-  height: 4000px;
-  position: relative;
-  background: radial-gradient(#2a2a40 1px, transparent 1px);
-  background-size: 40px 40px;
+  position: absolute;
+  inset: 0;
 }
 
+/* ===== Blocks ===== */
 .block {
   position: absolute;
-  min-width: 120px;
-  padding: 12px;
+  min-width: 160px;
+  padding: 10px;
   border-radius: 16px;
+  background: #ffffffcc;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
   cursor: grab;
-  user-select: none;
-  background: linear-gradient(135deg, #ffb6e9, #cdb4ff);
-  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
 }
 
 .block:active {
   cursor: grabbing;
 }
 
-.folder {
-  background: linear-gradient(135deg, #ffd6ff, #bde0fe);
+.block-title {
+  font-weight: 700;
+  display: block;
+  margin-bottom: 6px;
+  color: #7a007a;
 }
 
+/* ===== Folder ===== */
+.folder {
+  background: linear-gradient(135deg, #ffd6f0, #e6d9ff);
+}
+
+.children {
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left: 2px dashed rgba(0,0,0,0.2);
+}
+
+/* ===== Bookmark ===== */
+.bookmark {
+  background: linear-gradient(135deg, #fff0d9, #ffe6cc);
+}
+
+.bookmark a {
+  color: #ff4f9a;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+/* ===== Note ===== */
+.note {
+  background: linear-gradient(135deg, #e0ffe8, #d9f7ff);
+}
+
+.note p {
+  margin: 0;
+}
+
+/* ===== Bookmark Preview ===== */
 .bookmark-preview {
   position: fixed;
   width: 320px;
   height: 200px;
-  background: #111;
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-  pointer-events: none;
-  z-index: 9999;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.4);
   display: none;
+  z-index: 99999;
+  background: white;
 }
 
 .bookmark-preview iframe {
   width: 100%;
   height: 100%;
   border: none;
-}
-.bookmark:hover {
-  box-shadow: 0 0 20px rgba(255,182,233,0.8);
 }

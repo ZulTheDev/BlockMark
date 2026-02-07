@@ -1,341 +1,319 @@
-// ==============================
-// Canvas Setup
-// ==============================
-const canvasElement = document.getElementById("map");
+// ================================
+// LumaBlocks — All-in-One Script
+// ================================
+
+// ---------- Global State ----------
+const map = document.getElementById("map");
 let topLayerIndex = 1;
+let currentUsername = null;
 
-// ==============================
-// DATA RESTORATION AAAAAAHHHHHHH
-// ==============================
-let db;
+// ================================
+// Cognito Configuration (EDIT THESE)
+// ================================
+const COGNITO = {
+  domain: "https://us-east-1de69dgxpy.auth.us-east-1.amazoncognito.com",
+  clientId: "5mqehvmde8ta3ao1pfvq2b6eck",
+  redirectUri: window.location.origin + window.location.pathname,
+};
 
+// ================================
+// Auth Actions
+// ================================
+function login() {
+  window.location.href =
+    `${COGNITO.domain}/login?` +
+    `client_id=${COGNITO.clientId}` +
+    `&response_type=token` +
+    `&scope=openid+email+profile` +
+    `&redirect_uri=${encodeURIComponent(COGNITO.redirectUri)}`;
+}
+
+function signup() {
+  window.location.href =
+    `${COGNITO.domain}/signup?` +
+    `client_id=${COGNITO.clientId}` +
+    `&response_type=token` +
+    `&scope=openid+email+profile` +
+    `&redirect_uri=${encodeURIComponent(COGNITO.redirectUri)}`;
+}
+
+function logout() {
+  localStorage.removeItem("cognito_id_token");
+  location.reload();
+}
+
+// ================================
+// Token Handling
+// ================================
+function handleCognitoToken() {
+  const hash = window.location.hash.slice(1);
+  const params = new URLSearchParams(hash);
+  const token = params.get("id_token");
+
+  if (token) {
+    localStorage.setItem("cognito_id_token", token);
+    window.history.replaceState({}, document.title, window.location.pathname);
+    return token;
+  }
+  return localStorage.getItem("cognito_id_token");
+}
+
+function decodeJWT(token) {
+  try {
+    return JSON.parse(atob(token.split(".")[1]));
+  } catch {
+    return null;
+  }
+}
+
+// ================================
+// IndexedDB Setup
+// ================================
 const DB_NAME = "LumaBlocksDB";
-const STORE_NAME = "layout";
+const STORE_NAME = "layouts";
 
-function openDatabase() {
+function openDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-
-    request.onupgradeneeded = (event) => {
-      const database = event.target.result;
-      database.createObjectStore(STORE_NAME, { keyPath: "id" });
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      }
     };
-
-    request.onsuccess = () => {
-      db = request.result;
-      resolve();
-    };
-
-    request.onerror = () => reject(request.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 
-function serializeLayout() {
-  const blocks = document.querySelectorAll(".block");
+function getLayoutKey() {
+  return currentUsername ? `layout-${currentUsername}` : "layout-guest";
+}
 
-  const data = [];
+// ================================
+// Save / Load Layout
+// ================================
+function serializeBlock(block) {
+  const data = {
+    type: [...block.classList].find(c => c !== "block"),
+    left: block.style.left,
+    top: block.style.top,
+    zIndex: block.style.zIndex,
+    html: block.innerHTML,
+    children: []
+  };
 
-  blocks.forEach(block => {
-    // Ignore blocks already inside folders (saved via parent)
-    if (block.parentElement.classList.contains("children")) return;
-
-    data.push(serializeBlock(block));
-  });
+  const children = block.querySelector(".children");
+  if (children) {
+    children.querySelectorAll(":scope > .block").forEach(child => {
+      data.children.push(serializeBlock(child));
+    });
+  }
 
   return data;
 }
 
-function serializeBlock(blockElement) {
-  const blockData = {
-    id: crypto.randomUUID(),
-    type: [...blockElement.classList].find(c => c !== "block"),
-    left: blockElement.style.left,
-    top: blockElement.style.top,
-    zIndex: blockElement.style.zIndex,
-    html: blockElement.innerHTML,
-    children: []
-  };
-
-  const childrenContainer = blockElement.querySelector(".children");
-  if (childrenContainer) {
-    childrenContainer.querySelectorAll(".block").forEach(child => {
-      blockData.children.push(serializeBlock(child));
-    });
-  }
-
-  return blockData;
+function serializeLayout() {
+  return [...document.querySelectorAll("#map > .block")].map(serializeBlock);
 }
 
 async function saveLayout() {
-  if (!db) return;
-
-  const layoutData = serializeLayout();
-
+  const db = await openDB();
   const tx = db.transaction(STORE_NAME, "readwrite");
-  const store = tx.objectStore(STORE_NAME);
-
-  await store.put({
-    id: "main-layout",
-    data: layoutData
+  tx.objectStore(STORE_NAME).put({
+    id: getLayoutKey(),
+    data: serializeLayout()
   });
 }
 
 async function loadLayout() {
-  if (!db) return;
-
+  const db = await openDB();
   const tx = db.transaction(STORE_NAME, "readonly");
-  const store = tx.objectStore(STORE_NAME);
-
-  const request = store.get("main-layout");
-
-  request.onsuccess = () => {
-    if (!request.result) return;
-
-    canvasElement.innerHTML = "";
-    request.result.data.forEach(blockData => {
-      restoreBlock(blockData, canvasElement);
-    });
-  };
-}
-
-function restoreBlock(blockData, parentElement) {
-  const blockElement = document.createElement("div");
-
-  blockElement.className = `block ${blockData.type}`;
-  blockElement.style.position = "absolute";
-  blockElement.style.left = blockData.left;
-  blockElement.style.top = blockData.top;
-  blockElement.style.zIndex = blockData.zIndex;
-  blockElement.innerHTML = blockData.html;
-
-  enableDragging(blockElement);
-
-  parentElement.appendChild(blockElement);
-
-  const childrenContainer = blockElement.querySelector(".children");
-  if (childrenContainer && blockData.children) {
-    blockData.children.forEach(childData => {
-      restoreBlock(childData, childrenContainer);
-    });
-  }
-}
-
-
-
-// ==============================
-// Add Block Entry Point
-// ==============================
-function addBlock(blockType) {
-  const blockElement = document.createElement("div");
-
-  blockElement.className = `block ${blockType}`;
-  blockElement.style.position = "absolute";
-  blockElement.style.left = "100px";
-  blockElement.style.top = "100px";
-  blockElement.style.zIndex = topLayerIndex++;
-
-  blockElement.innerHTML = buildBlockContent(blockType);
-
-  enableDragging(blockElement);
-  canvasElement.appendChild(blockElement);
-}
-
-// ==============================
-// Build Block Inner HTML
-// ==============================
-function buildBlockContent(blockType) {
-  let content = "";
-
-  if (blockType === "folder") {
-    const folderName =
-      prompt("What would you like to call this folder?") || "Untitled Folder";
-
-    content = `
-      <strong class="block-title">${folderName}</strong>
-      <div class="children"></div>
-    `;
-  }
-
-  if (blockType === "bookmark") {
-    const url = prompt("Enter your URL to bookmark");
-    if (!url) return "";
-
-    const displayText = url
-      .replace(/^https?:\/\//, "")
-      .replace(/\/$/, "");
-
-    content = `
-      <strong class="block-title">BOOKMARK</strong>
-      <div class="bookmark-content">
-        <a href="${url}" target="_blank">${displayText}</a>
-      </div>
-    `;
-  }
-
-  if (blockType === "note") {
-    content = `
-      <strong class="block-title" contenteditable="true">
-        Enter note title
-      </strong>
-      <div class="note-content">
-        <p contenteditable="true">
-          click me to start writing your notes!~
-        </p>
-      </div>
-    `;
-  }
-
-  return content;
-}
-
-// ==============================
-// Drag Logic
-// ==============================
-function enableDragging(blockElement) {
-  let mouseOffsetX = 0;
-  let mouseOffsetY = 0;
-
-  blockElement.addEventListener("mousedown", (event) => {
-    // Prevent dragging when editing text
-    if (event.target.isContentEditable) return;
-
-    event.preventDefault();
-    blockElement.style.zIndex = topLayerIndex++;
-
-    mouseOffsetX = event.clientX - blockElement.offsetLeft;
-    mouseOffsetY = event.clientY - blockElement.offsetTop;
-
-    function handleMouseMove(moveEvent) {
-      blockElement.style.left =
-        moveEvent.clientX - mouseOffsetX + "px";
-      blockElement.style.top =
-        moveEvent.clientY - mouseOffsetY + "px";
-    }
-
-    function handleMouseUp() {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-
-      tryDropIntoFolder(blockElement);
-      snapToNearbyBlocks(blockElement);
-    }
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
+  return new Promise(resolve => {
+    const req = tx.objectStore(STORE_NAME).get(getLayoutKey());
+    req.onsuccess = () => resolve(req.result?.data || []);
+    req.onerror = () => resolve([]);
   });
 }
 
-// ==============================
-// Snap Logic (Lego Feel)
-// ==============================
-function snapToNearbyBlocks(activeBlock) {
-  if (activeBlock.parentElement.classList.contains("children")) return;
+function restoreBlocks(blocks, parent = map) {
+  blocks.forEach(data => {
+    const block = document.createElement("div");
+    block.className = `block ${data.type}`;
+    block.style.position = "absolute";
+    block.style.left = data.left;
+    block.style.top = data.top;
+    block.style.zIndex = data.zIndex;
+    block.innerHTML = data.html;
 
-  const allBlocks = document.querySelectorAll(".block");
-  const SNAP_DISTANCE = 40;
+    enableDragging(block);
+    if (data.type === "bookmark") enableBookmarkPreview(block);
 
-  allBlocks.forEach(targetBlock => {
-    if (targetBlock === activeBlock) return;
-    if (targetBlock.parentElement.classList.contains("children")) return;
+    parent.appendChild(block);
 
-    const dx = targetBlock.offsetLeft - activeBlock.offsetLeft;
-    const dy = targetBlock.offsetTop - activeBlock.offsetTop;
-
-    if (Math.abs(dx) < SNAP_DISTANCE && Math.abs(dy) < SNAP_DISTANCE) {
-      activeBlock.style.left = targetBlock.offsetLeft + 30 + "px";
-      activeBlock.style.top = targetBlock.offsetTop + 30 + "px";
+    const children = block.querySelector(".children");
+    if (children && data.children.length) {
+      restoreBlocks(data.children, children);
     }
   });
 }
-saveLayout();
 
-// ==============================
-// Folder Drop Logic
-// ==============================
-function tryDropIntoFolder(blockElement) {
-  const folderBlocks = document.querySelectorAll(".folder");
+// ================================
+// Block Creation
+// ================================
+function addBlock(type) {
+  if (!currentUsername) {
+    alert("Please login to save your progress ✨");
+    return;
+  }
 
-  folderBlocks.forEach(folderElement => {
-    if (folderElement === blockElement) return;
+  const block = document.createElement("div");
+  block.className = `block ${type}`;
+  block.style.left = "120px";
+  block.style.top = "120px";
+  block.style.zIndex = topLayerIndex++;
 
-    const folderRect = folderElement.getBoundingClientRect();
-    const blockRect = blockElement.getBoundingClientRect();
+  block.innerHTML = buildBlockContent(type);
+  enableDragging(block);
+  if (type === "bookmark") enableBookmarkPreview(block);
 
-    const isInside =
-      blockRect.left > folderRect.left &&
-      blockRect.right < folderRect.right &&
-      blockRect.top > folderRect.top &&
-      blockRect.bottom < folderRect.bottom;
+  map.appendChild(block);
+  saveLayout();
+}
 
-    if (!isInside) return;
+function buildBlockContent(type) {
+  if (type === "folder") {
+    const name = prompt("Folder name") || "Untitled Folder";
+    return `<strong class="block-title">${name}</strong><div class="children"></div>`;
+  }
 
-    const childrenContainer = folderElement.querySelector(".children");
-    if (!childrenContainer) return;
+  if (type === "bookmark") {
+    const url = prompt("Enter URL") || "#";
+    const label = url.replace(/^https?:\/\//, "").split("/")[0];
+    return `<strong class="block-title">BOOKMARK</strong>
+            <a href="${url}" target="_blank">${label}</a>`;
+  }
 
-    childrenContainer.appendChild(blockElement);
+  if (type === "note") {
+    return `<strong class="block-title" contenteditable="true">Note</strong>
+            <p contenteditable="true">Write here…</p>`;
+  }
 
-    blockElement.style.position = "relative";
-    blockElement.style.left = "0";
-    blockElement.style.top = "0";
+  return "";
+}
+
+// ================================
+// Drag / Snap / Folder Logic
+// ================================
+function enableDragging(block) {
+  let offsetX = 0, offsetY = 0;
+
+  block.addEventListener("mousedown", e => {
+    if (e.target.isContentEditable) return;
+
+    block.style.zIndex = topLayerIndex++;
+    offsetX = e.clientX - block.offsetLeft;
+    offsetY = e.clientY - block.offsetTop;
+
+    function move(e) {
+      block.style.left = e.clientX - offsetX + "px";
+      block.style.top = e.clientY - offsetY + "px";
+    }
+
+    function up() {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      snapToBlocks(block);
+      dropIntoFolder(block);
+      saveLayout();
+    }
+
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
   });
 }
-saveLayout();
 
-// ==============================
-// Folder Expand / Collapse
-// ==============================
-document.addEventListener("dblclick", (event) => {
-  const folderElement = event.target.closest(".folder");
-  if (!folderElement) return;
+function snapToBlocks(active) {
+  const SNAP = 40;
+  document.querySelectorAll(".block").forEach(b => {
+    if (b === active || b.parentElement.classList.contains("children")) return;
+    const dx = b.offsetLeft - active.offsetLeft;
+    const dy = b.offsetTop - active.offsetTop;
+    if (Math.abs(dx) < SNAP && Math.abs(dy) < SNAP) {
+      active.style.left = b.offsetLeft + 30 + "px";
+      active.style.top = b.offsetTop + 30 + "px";
+    }
+  });
+}
 
-  const children = folderElement.querySelector(".children");
+function dropIntoFolder(block) {
+  document.querySelectorAll(".folder").forEach(folder => {
+    if (folder === block) return;
+    const f = folder.getBoundingClientRect();
+    const b = block.getBoundingClientRect();
+    if (b.left > f.left && b.right < f.right && b.top > f.top && b.bottom < f.bottom) {
+      folder.querySelector(".children")?.appendChild(block);
+      block.style.position = "relative";
+      block.style.left = "0";
+      block.style.top = "0";
+    }
+  });
+}
+
+document.addEventListener("dblclick", e => {
+  const folder = e.target.closest(".folder");
+  if (!folder) return;
+  const children = folder.querySelector(".children");
   if (!children) return;
-
-  children.style.display =
-    children.style.display === "none" ? "block" : "none";
+  children.style.display = children.style.display === "none" ? "block" : "none";
+  saveLayout();
 });
-saveLayout();
 
+// ================================
+// Bookmark Hover Preview
+// ================================
+const preview = document.createElement("div");
+preview.className = "bookmark-preview";
+document.body.appendChild(preview);
 
-/*
-This is just the preview function
-*/
-const previewElement = document.createElement("div");
-previewElement.className = "bookmark-preview";
-document.body.appendChild(previewElement);
+function enableBookmarkPreview(block) {
+  const link = block.querySelector("a");
+  if (!link) return;
 
-function enableBookmarkPreview(bookmarkBlock) {
-  const linkElement = bookmarkBlock.querySelector("a");
-  if (!linkElement) return;
-
-  let previewLoaded = false;
-
-  bookmarkBlock.addEventListener("mouseenter", (event) => {
-    const url = linkElement.href;
-
-    previewElement.style.display = "block";
-    previewElement.style.left = event.clientX + 20 + "px";
-    previewElement.style.top = event.clientY + 20 + "px";
-
-    if (!previewLoaded) {
-      previewElement.innerHTML = `
-        <iframe 
-          src="${bookmark}" 
-          sandbox="allow-scripts allow-same-origin">
-        </iframe>
-      `;
-      previewLoaded = true;
-    }
+  block.addEventListener("mouseenter", e => {
+    preview.style.display = "block";
+    preview.style.left = e.clientX + 20 + "px";
+    preview.style.top = e.clientY + 20 + "px";
+    preview.innerHTML = `<iframe src="${link.href}"></iframe>`;
   });
 
-  bookmarkBlock.addEventListener("mousemove", (event) => {
-    previewElement.style.left = event.clientX + 20 + "px";
-    previewElement.style.top = event.clientY + 20 + "px";
+  block.addEventListener("mousemove", e => {
+    preview.style.left = e.clientX + 20 + "px";
+    preview.style.top = e.clientY + 20 + "px";
   });
 
-  bookmarkBlock.addEventListener("mouseleave", () => {
-    previewElement.style.display = "none";
-    previewElement.innerHTML = "";
-    previewLoaded = false;
+  block.addEventListener("mouseleave", () => {
+    preview.style.display = "none";
+    preview.innerHTML = "";
   });
 }
+
+// ================================
+// Auto Save + Init
+// ================================
+setInterval(saveLayout, 3000);
+
+window.addEventListener("load", async () => {
+  const token = handleCognitoToken();
+  if (token) {
+    const payload = decodeJWT(token);
+    currentUsername =
+      payload?.["cognito:username"] ||
+      payload?.email ||
+      payload?.sub;
+    document.body.classList.add("logged-in");
+  }
+
+  const blocks = await loadLayout();
+  restoreBlocks(blocks);
+});
