@@ -26,10 +26,26 @@ function openDB() {
 }
 
 // ---------- Key Utilities ----------
-function generatePrivateKey() {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return btoa(String.fromCharCode(...array));
+// ---------- Key Actions ----------
+async function setupWithKey(key) {
+  userKey = key;
+  cryptoKey = await deriveCryptoKey(key);
+
+  const data = await loadLayout();
+  restoreBlocks(data); // just restore, do NOT call generateKeyFlow again!
+}
+
+function generateKeyFlow() {
+  // Only generate a key once, and setup
+  const key = generatePrivateKey();
+  alert(
+    "SAVE THIS PRIVATE KEY ⚠️\n\n" +
+    key +
+    "\n\nYou need it to restore your layout."
+  );
+
+  // Setup the app with this key
+  setupWithKey(key); // this should NOT call generateKeyFlow again
 }
 
 async function deriveCryptoKey(privateKey) {
